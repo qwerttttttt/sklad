@@ -17,10 +17,10 @@ button{background:#0f4c5c;color:#fff;border:0;font-weight:600}
 button.g{background:#2e7d32}button.s{background:#5b6770}button.r{background:#c62828}
 button.w{width:auto;padding:8px 14px;margin:0}
 .tabs{display:flex;gap:6px}
-.tabs button{background:#d8dcd5;color:#2c3a3f;margin:0;padding:10px 4px;font-size:14px}
+.tabs button{background:#d8dcd5;color:#2c3a3f;margin:0;padding:10px 2px;font-size:12px}
 .tabs button.on{background:#0f4c5c;color:#fff}
 .card{background:#fff;border-radius:12px;padding:12px;margin-top:10px;border-left:8px solid #e8a317;line-height:1.5}
-.card.work{border-color:#0f4c5c}.card.done{border-color:#2e7d32}
+.card.work{border-color:#0f4c5c}.card.done{border-color:#2e7d32}.card.mark{border-color:#7b3fa0}
 .row{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #dde1da}
 .bad{color:#c62828}.ok{color:#2e7d32}.muted{color:#5b6770;font-size:14px}
 .bar{height:10px;background:#d8dcd5;border-radius:5px;overflow:hidden}
@@ -55,22 +55,23 @@ function load(){
 const save=()=>localStorage.setItem(KEY,JSON.stringify(cargos));
 const getC=id=>cargos.find(c=>c.id===id);
 const fmt=t=>t?new Date(t).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
-const dur=c=>{if(!c.arrived||!c.finished)return"—";const m=Math.round((c.finished-c.arrived)/6e4);return m>=60?Math.floor(m/60)+" ч "+m%60+" мин":m+" мин"};
+const dur=(a,b)=>{if(!a||!b)return"—";const m=Math.round((b-a)/6e4);return m>=60?Math.floor(m/60)+" ч "+m%60+" мин":m+" мин"};
 const need=i=>(i.fact==null?i.exp:i.fact)-(i.defect||0);
 const marked=i=>i.codes.length+(i.mm||0);
 const wsum=c=>Math.round(c.pallets.reduce((s,p)=>s+p.w,0)*10)/10;
 const qsum=c=>c.pallets.reduce((s,p)=>s+(p.q||0),0);
 
-function issues(c){
+function recvIssues(c){
   const a=[];
   if(!c.pallets.length)a.push("Не взвешено ни одного палета");
   c.items.forEach(i=>{
     if(i.fact==null)a.push("Не введён пересчёт: "+i.name);
     else if(i.fact!==i.exp)a.push("Расхождение: "+i.name+" — ждали "+i.exp+", факт "+i.fact);
-    if(marked(i)<need(i))a.push("Маркировка "+i.name+": "+marked(i)+" из "+need(i));
   });
   return a;
 }
+const markIssues=c=>c.items.filter(i=>marked(i)<need(i)).map(i=>"Маркировка "+i.name+": "+marked(i)+" из "+need(i));
+const inTab=(c,k)=>k==="mark"?(c.status==="ready"||c.status==="mark"):c.status===k;
 
 function go(id){cur=id||null;form=false;ci=0;render();scrollTo(0,0)}
 function newCargo(){form=true;render();scrollTo(0,0)}
@@ -84,15 +85,15 @@ function render(){
 }
 
 function listHtml(){
-  const names={wait:"Ожидаются",work:"В работе",done:"Готово"};
-  let h='<div class="tabs">'+Object.keys(names).map(k=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';render()">${names[k]} (${cargos.filter(c=>c.status===k).length})</button>`).join("")+"</div>";
+  const names={wait:"Ожидаются",work:"Приёмка",mark:"Маркировка",done:"Готово"};
+  let h='<div class="tabs">'+Object.keys(names).map(k=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';render()">${names[k]} (${cargos.filter(c=>inTab(c,k)).length})</button>`).join("")+"</div>";
   h+='<button onclick="newCargo()">+ Новый груз</button>';
-  const l=cargos.filter(c=>c.status===tab).sort((a,b)=>b.id-a.id);
+  const l=cargos.filter(c=>inTab(c,tab)).sort((a,b)=>b.id-a.id);
   if(!l.length)h+='<p class="muted">Здесь пока пусто.</p>';
   l.forEach(c=>{
     const m=c.items.reduce((s,i)=>s+marked(i),0),n=c.items.reduce((s,i)=>s+need(i),0);
     h+=`<div class="card ${c.status}" onclick="go(${c.id})"><b>${esc(c.supplier)}</b>${c.invoice?", накладная "+esc(c.invoice):""}<br><span class="muted">${c.items.map(i=>esc(i.name)).join(", ")}</span><br>`+
-      (c.status==="wait"?"Ожидается: "+fmt(c.plan):"Пришёл: "+fmt(c.arrived)+(c.status==="done"?", "+dur(c):", маркировка "+m+" из "+n))+"</div>";
+      ({wait:"Ожидается: "+fmt(c.plan),work:"Пришёл: "+fmt(c.arrived),ready:"Приёмка закончена ("+dur(c.arrived,c.finished)+"), ждёт маркировки",mark:"Маркировка: "+m+" из "+n+", с "+fmt(c.mStart),done:"Всего: "+dur(c.arrived,c.mEnd||c.finished)}[c.status])+"</div>";
   });
   return h+'<h2>Данные</h2><button class="s" onclick="exportCsv()">Выгрузить в Excel (CSV)</button><button class="s" onclick="backup()">Сохранить резервную копию</button><button class="s" onclick="$(\'imp\').click()">Восстановить из копии</button><input id="imp" type="file" accept=".json" hidden onchange="restore(this)">';
 }
@@ -117,32 +118,50 @@ function saveNew(){
 }
 
 function cargoHtml(c){
-  let h=`<div class="card ${c.status}"><b>${esc(c.supplier)}</b><br>Накладная: ${esc(c.invoice)||"—"}, машина: ${esc(c.truck)||"—"}<br>Ожидается: ${fmt(c.plan)}<br>Пришёл: ${fmt(c.arrived)}<br>Закончили: ${fmt(c.finished)}, длительность: ${dur(c)}`+(c.note?`<br><i>${esc(c.note)}</i>`:"")+"</div>";
-  if(c.status==="wait")h+=`<button class="g" onclick="start(${c.id})">Груз приехал: начать приёмку</button>`;
-  else{
-    const ed=c.status==="work";
-    h+="<h2>Палеты и вес</h2>";
-    c.pallets.forEach((p,k)=>h+=`<div class="row"><span>Палет ${k+1}: ${p.w} кг${p.q?", "+p.q+" шт.":""}</span>${ed?`<button class="w r" onclick="delPallet(${c.id},${k})">✕</button>`:""}</div>`);
-    if(c.pallets.length)h+=`<p><b>Палетов: ${c.pallets.length}, вес: ${wsum(c)} кг${qsum(c)?", по палетам: "+qsum(c)+" шт.":""}</b></p>`;
-    if(ed)h+=`<button onclick="addPallet(${c.id})">+ Палет</button>`;
-    h+="<h2>Вскрытие и пересчёт</h2>";
-    c.items.forEach((i,k)=>h+=`<div class="row"><span>${esc(i.name)}<br><span class="muted">ждали ${i.exp}, факт <b class="${i.fact!=null&&i.fact!==i.exp?"bad":""}">${i.fact??"—"}</b>, брак ${i.defect||0}</span></span>${ed?`<button class="w" onclick="count(${c.id},${k})">Ввести</button>`:""}</div>`);
+  const S=c.status,ed=S==="work";
+  let h=`<div class="card ${S}"><b>${esc(c.supplier)}</b><br>Накладная: ${esc(c.invoice)||"—"}, машина: ${esc(c.truck)||"—"}<br>Ожидается: ${fmt(c.plan)}<br>Пришёл: ${fmt(c.arrived)}<br>Приёмка закончена: ${fmt(c.finished)}, ${dur(c.arrived,c.finished)}<br>Маркировка: ${fmt(c.mStart)} — ${fmt(c.mEnd)}, ${dur(c.mStart,c.mEnd)}`+(c.note?`<br><i>${esc(c.note)}</i>`:"")+"</div>";
+  const delBtn=`<button class="r" onclick="del(${c.id})">Удалить груз</button>`;
+  const list=a=>a.map(x=>`<div class="bad row">⚠ ${esc(x)}</div>`).join("");
+  if(S==="wait")return h+`<button class="g" onclick="start(${c.id})">Груз приехал: начать приёмку</button>`+delBtn;
+  h+="<h2>Палеты и вес</h2>";
+  c.pallets.forEach((p,k)=>h+=`<div class="row"><span>Палет ${k+1}: ${p.w} кг${p.q?", "+p.q+" шт.":""}</span>${ed?`<button class="w r" onclick="delPallet(${c.id},${k})">✕</button>`:""}</div>`);
+  if(c.pallets.length)h+=`<p><b>Палетов: ${c.pallets.length}, вес: ${wsum(c)} кг${qsum(c)?", по палетам: "+qsum(c)+" шт.":""}</b></p>`;
+  if(ed)h+=`<button onclick="addPallet(${c.id})">+ Палет</button>`;
+  h+="<h2>Вскрытие и пересчёт</h2>";
+  c.items.forEach((i,k)=>h+=`<div class="row"><span>${esc(i.name)}<br><span class="muted">ждали ${i.exp}, факт <b class="${i.fact!=null&&i.fact!==i.exp?"bad":""}">${i.fact??"—"}</b>, брак ${i.defect||0}</span></span>${ed?`<button class="w" onclick="count(${c.id},${k})">Ввести</button>`:""}</div>`);
+  if(ed){
+    const is=recvIssues(c);
+    h+="<h2>Проверка приёмки</h2>"+(is.length?list(is):'<div class="ok row">✓ Всё сходится</div>')+`<button class="g" onclick="finishRecv(${c.id})">Завершить приёмку</button>`;
+  }else{
     h+="<h2>Маркировка «Честный знак»</h2>";
     c.items.forEach(i=>{const m=marked(i),n=need(i),pc=n>0?Math.min(100,m/n*100):0;h+=`<div style="margin-top:8px">${esc(i.name)}: <b class="${m>=n?"ok":""}">${m} из ${n}</b><div class="bar"><i style="width:${pc}%"></i></div></div>`});
-    if(ed){
+    if(S==="ready")h+=`<button class="g" onclick="startMark(${c.id})">Начать маркировку</button><button class="s" onclick="reopenRecv(${c.id})">Вернуться в приёмку</button>`;
+    if(S==="mark"){
       h+=`<select onchange="ci=this.selectedIndex;$('scan').focus()">${c.items.map((i,k)=>`<option ${k===ci?"selected":""}>${esc(i.name)}</option>`).join("")}</select>`+
         `<input id="scan" placeholder="Сканируйте код (Enter)" autocomplete="off" inputmode="${kb?"text":"none"}" onkeydown="if(event.key==='Enter')doScan(${c.id})"><div id="st">Готов к сканированию</div>`+
         `<div class="btns"><button class="s" onclick="manual(${c.id},1)">+1 без кода</button><button class="s" onclick="manual(${c.id},-1)">−1</button><button class="s" onclick="kb=!kb;render()">⌨</button></div>`;
+      const is=markIssues(c);
+      h+="<h2>Проверка маркировки</h2>"+(is.length?list(is):'<div class="ok row">✓ Всё промаркировано</div>')+`<button class="g" onclick="finishMark(${c.id})">Завершить маркировку</button>`;
     }
-    const is=issues(c);
-    h+="<h2>Проверка</h2>"+(is.length?is.map(x=>`<div class="bad row">⚠ ${esc(x)}</div>`).join(""):'<div class="ok row">✓ Всё сходится</div>');
-    h+=ed?`<button class="g" onclick="finish(${c.id})">Завершить приёмку</button>`:`<button class="s" onclick="reopen(${c.id})">Вернуть в работу</button>`;
+    if(S==="done")h+=`<button class="s" onclick="reopenMark(${c.id})">Вернуть в маркировку</button>`;
   }
-  return h+`<button class="r" onclick="del(${c.id})">Удалить груз</button>`;
+  return h+delBtn;
 }
 
 function start(id){const c=getC(id);c.status="work";c.arrived=Date.now();save();tab="work";render()}
-function reopen(id){const c=getC(id);c.status="work";c.finished=null;save();render()}
+function finishRecv(id){
+  const c=getC(id),is=recvIssues(c);
+  if(is.length&&!confirm("Есть замечания:\n• "+is.join("\n• ")+"\n\nЗавершить приёмку всё равно?"))return;
+  c.status="ready";c.finished=Date.now();save();tab="mark";go();
+}
+function startMark(id){const c=getC(id);c.status="mark";c.mStart=Date.now();save();render()}
+function finishMark(id){
+  const c=getC(id),is=markIssues(c);
+  if(is.length&&!confirm("Маркировка не закончена:\n• "+is.join("\n• ")+"\n\nЗавершить всё равно?"))return;
+  c.status="done";c.mEnd=Date.now();save();tab="done";go();
+}
+function reopenRecv(id){const c=getC(id);c.status="work";c.finished=null;save();render()}
+function reopenMark(id){const c=getC(id);c.status="mark";c.mEnd=null;c.mStart=c.mStart||Date.now();save();render()}
 function del(id){if(confirm("Удалить груз полностью?")){cargos=cargos.filter(c=>c.id!==id);save();go()}}
 
 function addPallet(id){
@@ -189,17 +208,11 @@ function manual(id,d){
   save();render();
 }
 
-function finish(id){
-  const c=getC(id),is=issues(c);
-  if(is.length&&!confirm("Есть замечания:\n• "+is.join("\n• ")+"\n\nЗавершить всё равно?"))return;
-  c.status="done";c.finished=Date.now();save();tab="done";go();
-}
-
 function download(name,text,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click()}
 function exportCsv(){
-  const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"',st={wait:"ожидается",work:"в работе",done:"принят"},f=t=>t?new Date(t).toLocaleString("ru-RU"):"";
-  const rows=[["№","Поставщик","Накладная","Машина","Статус","Ожидали к","Пришёл","Закончили","Минут","Палетов","Вес, кг","Товар","Ожидали","Факт","Брак","Промаркировано"]];
-  cargos.forEach(c=>c.items.forEach(i=>rows.push([c.id,c.supplier,c.invoice,c.truck,st[c.status],f(c.plan),f(c.arrived),f(c.finished),c.arrived&&c.finished?Math.round((c.finished-c.arrived)/6e4):"",c.pallets.length,String(wsum(c)).replace(".",","),i.name,i.exp,i.fact??"",i.defect||0,marked(i)])));
+  const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"',st={wait:"ожидается",work:"приёмка",ready:"ждёт маркировки",mark:"маркировка",done:"готово"},f=t=>t?new Date(t).toLocaleString("ru-RU"):"",mins=(a,b)=>a&&b?Math.round((b-a)/6e4):"";
+  const rows=[["№","Поставщик","Накладная","Машина","Статус","Ожидали к","Пришёл","Приёмка закончена","Маркировка с","Маркировка до","Приёмка, мин","Маркировка, мин","Палетов","Вес, кг","Товар","Ожидали","Факт","Брак","Промаркировано"]];
+  cargos.forEach(c=>c.items.forEach(i=>rows.push([c.id,c.supplier,c.invoice,c.truck,st[c.status],f(c.plan),f(c.arrived),f(c.finished),f(c.mStart),f(c.mEnd),mins(c.arrived,c.finished),mins(c.mStart,c.mEnd),c.pallets.length,String(wsum(c)).replace(".",","),i.name,i.exp,i.fact??"",i.defect||0,marked(i)])));
   download("priemka.csv","\ufeff"+rows.map(r=>r.map(q).join(";")).join("\r\n"),"text/csv;charset=utf-8");
 }
 function backup(){download("priemka-backup.json",JSON.stringify(cargos),"application/json")}
