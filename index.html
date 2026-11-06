@@ -73,6 +73,7 @@ function issues(c){
 }
 
 function go(id){cur=id||null;form=false;ci=0;render();scrollTo(0,0)}
+function newCargo(){form=true;render();scrollTo(0,0)}
 
 function render(){
   $("back").hidden=!cur&&!form;
@@ -85,7 +86,7 @@ function render(){
 function listHtml(){
   const names={wait:"Ожидаются",work:"В работе",done:"Готово"};
   let h='<div class="tabs">'+Object.keys(names).map(k=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';render()">${names[k]} (${cargos.filter(c=>c.status===k).length})</button>`).join("")+"</div>";
-  h+='<button onclick="form=true;render()">+ Новый груз</button>';
+  h+='<button onclick="newCargo()">+ Новый груз</button>';
   const l=cargos.filter(c=>c.status===tab).sort((a,b)=>b.id-a.id);
   if(!l.length)h+='<p class="muted">Здесь пока пусто.</p>';
   l.forEach(c=>{

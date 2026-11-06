@@ -1,5 +1,5 @@
 // Чтобы выпустить обновление, поменяйте номер версии: sklad-v2, sklad-v3 и так далее
-const V = "sklad-v1";
+const V = "sklad-v2";
 const FILES = ["./", "index.html", "manifest.json", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e =>
