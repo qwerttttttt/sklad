@@ -1,9 +1,12 @@
-// Чтобы выпустить обновление, поменяйте номер версии: sklad-v2, sklad-v3 и так далее
-const V = "sklad-v2";
+// Чтобы выпустить обновление, поменяйте номер версии: sklad-v4, sklad-v5 и так далее
+const V = "sklad-v3";
 const FILES = ["./", "index.html", "manifest.json", "icon-192.png", "icon-512.png"];
 
+// cache: "reload" заставляет брать свежие файлы с сервера, а не из временной памяти браузера
 self.addEventListener("install", e =>
-  e.waitUntil(caches.open(V).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
+  e.waitUntil(caches.open(V)
+    .then(c => c.addAll(FILES.map(f => new Request(f, { cache: "reload" }))))
+    .then(() => self.skipWaiting())));
 
 self.addEventListener("activate", e =>
   e.waitUntil(caches.keys()
